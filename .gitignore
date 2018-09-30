@@ -1,0 +1,5 @@
+# ignore object files
+obj/*
+
+# ignore executable
+px4_quad_sim

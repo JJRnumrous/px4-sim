@@ -4,9 +4,27 @@
 
 #include "quad_model.h"
 
+//Private variables
+double *_Forces, *_Moments;
+Quad *_quad;
+
 // Private function prototypes
 void six_dof_kinematic(double dt, QuadState *quad_state);
 void update_sensors(Quad *quad);
+
+double D_U(double states[]);
+double D_V(double states[]);
+double D_W(double states[]);
+double D_P(double states[]);
+double D_Q(double states[]);
+double D_R(double states[]);
+
+double D_phi(double states[]);
+double D_theta(double states[]);
+double D_psi(double states[]);
+double D_N(double states[]);
+double D_E(double states[]);
+double D_D(double states[]);
 
 // Public function definitions
 void init_quad(Quad *quad, double mass, double inertia[3], double d, double r_d, double r_ld, double c_d[3], double thrust_tc, double throttle_hover)
@@ -58,143 +76,107 @@ void init_quad_sensors(Quad *quad, double eph, double epv, double fix, double vi
 
 void six_dof(double dt, Quad *quad, double forces[3], double moments[3])
 {
-    double p_dot, q_dot, r_dot;
+    int i,len;
+    len = 6;
+    double uvwpqr[len], uvwpqr_integ[len];
+    vFunctionCall uvwpqr_dot[] = {D_U, D_V, D_W, D_P, D_Q, D_R};
     QuadState *quad_state;
-
     quad_state = &(quad->state);
 
-/*
-    p_dot = (moments[0] - quad_state->omega_b[1]*quad_state->omega_b[2]*(quad->inertia[2] - quad->inertia[1]))/quad->inertia[0];
-    q_dot = (moments[1] - quad_state->omega_b[0]*quad_state->omega_b[2]*(quad->inertia[0] - quad->inertia[2]))/quad->inertia[1];
-    r_dot = (moments[2] - quad_state->omega_b[0]*quad_state->omega_b[1]*(quad->inertia[1] - quad->inertia[0]))/quad->inertia[2];
+    // initialise local global for 6dof Runga Kutta
+    _Forces  = forces;
+    _Moments = moments;
+    _quad    = quad;
 
-    quad_state->acc_b[0] = forces[0]/quad->mass + quad_state->vel_b[1]*quad_state->omega_b[2] - quad_state->vel_b[2]*quad_state->omega_b[1];
-    quad_state->acc_b[1] = forces[1]/quad->mass - quad_state->vel_b[0]*quad_state->omega_b[2] + quad_state->vel_b[2]*quad_state->omega_b[0];
-    quad_state->acc_b[2] = forces[2]/quad->mass + quad_state->vel_b[0]*quad_state->omega_b[1] - quad_state->vel_b[1]*quad_state->omega_b[0];
+    // populate the states UVWPQR for timestep
+    for(i=0;i<3;i++)
+    {
+        uvwpqr[i] = quad_state->vel_b[i];
+    }
+    for(i=3;i<6;i++)
+    {
+        uvwpqr[i] = quad_state->omega_b[i-3];
+    }
 
-    quad_state->vel_b[0] = integrate(quad_state->vel_b[0], quad_state->acc_b[0], dt);
-    quad_state->vel_b[1] = integrate(quad_state->vel_b[1], quad_state->acc_b[1], dt);
-    quad_state->vel_b[2] = integrate(quad_state->vel_b[2], quad_state->acc_b[2], dt);
-
-    quad_state->omega_b[0] = integrate(quad_state->omega_b[0], p_dot, dt);
-    quad_state->omega_b[1] = integrate(quad_state->omega_b[1], q_dot, dt);
-    quad_state->omega_b[2] = integrate(quad_state->omega_b[2], r_dot, dt);
-*/
-    double FM[6] = {forces[0], forces[1], forces[2], moments[0], moments[1], moments[2]};
-    quad_state->acc_b[0] = D_U(FM, quad);
-    quad_state->acc_b[1] = D_V(FM, quad);
-    quad_state->acc_b[2] = D_W(FM, quad);
+    //calculate and set new linear body accel for timestep
+    quad_state->acc_b[0] = D_U(uvwpqr);
+    quad_state->acc_b[1] = D_V(uvwpqr);
+    quad_state->acc_b[2] = D_W(uvwpqr);
     
-    double states[6];
-    RK4(dt, D_U, D_V, D_W, D_P, D_Q, D_R, FM, quad,states);
-    quad_state->vel_b[0] = states[0];
-    quad_state->vel_b[1] = states[1];
-    quad_state->vel_b[2] = states[2];
-    quad_state->omega_b[0] = states[0];
-    quad_state->omega_b[1] = states[1];
-    quad_state->omega_b[2] = states[2];
+ 
+    integer_rk4(dt, uvwpqr_dot,uvwpqr,uvwpqr_integ,len);
+    quad_state->vel_b[0] = uvwpqr_integ[0];
+    quad_state->vel_b[1] = uvwpqr_integ[1];
+    quad_state->vel_b[2] = uvwpqr_integ[2];
+    quad_state->omega_b[0] = uvwpqr_integ[0];
+    quad_state->omega_b[1] = uvwpqr_integ[1];
+    quad_state->omega_b[2] = uvwpqr_integ[2];
 
     six_dof_kinematic(dt, quad_state);
 }
 
-// **************************************************************************************************************************************************
-// Function:    Derivative Functions for Kinetics
-// Inputs:      Forces and moments, quad states => mass,inertia[3], vel_b[3], omega_b[3]
-// Output:      Value for derivitive at specific states.
-// **************************************************************************************************************************************************
-double D_U(double FM[6], Quad *quad)
+/* **************************************************************************************************************************************************
+* Function:    Derivative Functions for Kinetics
+* Inputs:      states = u0, v1, w2, p3, q4, r5
+* Output:      Value for derivitive at specific states.
+**************************************************************************************************************************************************** */
+double D_U(double states[])
 {
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-
-    return FM[0]/quad->mass + quad_state->vel_b[1]*quad_state->omega_b[2] - quad_state->vel_b[2]*quad_state->omega_b[1];
+    return _Forces[0]/_quad->mass + states[1]*states[5] - states[2]*states[4];
 }
 
-double D_V(double FM[6], Quad *quad)
+double D_V(double states[])
 {
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-
-    return FM[1]/quad->mass - quad_state->vel_b[0]*quad_state->omega_b[2] + quad_state->vel_b[2]*quad_state->omega_b[0];
+    return _Forces[1]/_quad->mass - states[0]*states[5] + states[2]*states[3];
 }
 
-double D_W(double FM[6], Quad *quad)
+double D_W(double states[])
 {
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-
-    return FM[2]/quad->mass + quad_state->vel_b[0]*quad_state->omega_b[1] - quad_state->vel_b[1]*quad_state->omega_b[0];
+    return _Forces[2]/_quad->mass + states[0]*states[4] - states[1]*states[3];
 }
 
-double D_P(double FM[6], Quad *quad)
+double D_P(double states[])
 {
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-
-    return (FM[3] - quad_state->omega_b[1]*quad_state->omega_b[2]*(quad->inertia[2] - quad->inertia[1]))/quad->inertia[0];
+    return (_Moments[0] - states[4]*states[5]*(_quad->inertia[2] - _quad->inertia[1]))/_quad->inertia[0];
 }
 
-double D_Q(double FM[6], Quad *quad)
+double D_Q(double states[])
 {
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-
-    return (FM[4] - quad_state->omega_b[0]*quad_state->omega_b[2]*(quad->inertia[0] - quad->inertia[2]))/quad->inertia[1];
+    return (_Moments[1] - states[3]*states[5]*(_quad->inertia[0] - _quad->inertia[2]))/_quad->inertia[1];
 }
 
-double D_R(double FM[6], Quad *quad)
+double D_R(double states[])
 {
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-
-    return (FM[5] - quad_state->omega_b[0]*quad_state->omega_b[1]*(quad->inertia[1] - quad->inertia[0]))/quad->inertia[2];
+    return (_Moments[2] - states[3]*states[4]*(_quad->inertia[1] - _quad->inertia[0]))/_quad->inertia[2];
 }
 /* **************************************************************************************************************************************************
-*   Kinematic Derivative functions
-*
-*
+* Function:    Kinematic Derivative functions
+* Inputs:      states = u0, v1, w2, p3, q4, r5, phi6, theta7, psi8, N9, E10, D11
+* Output:      Value for derivitive at specific states.
 ****************************************************************************************************************************************************/
-double D_phi(double FM[6], Quad *quad)
+double D_phi(double states[])
 {
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-
-    return quad_state->omega_b[0] + sin(quad_state->euler[0])*sin(quad_state->euler[2])*quad_state->omega_b[1] + cos(quad_state->euler[0])*tan(quad_state->euler[2])*quad_state->omega_b[2];
+    return _quad->state.omega_b[0] + sin(states[0])*tan(states[1])*_quad->state.omega_b[1] + cos(states[0])*tan(states[6])*_quad->state.omega_b[2];
 }
-double D_theta(double FM[6], Quad *quad)
+double D_theta(double states[])
 {
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-
-    return cos(quad_state->euler[0])*quad_state->omega_b[1] - sin(quad_state->euler[0])*quad_state->omega_b[2];
+    return cos(states[0])*_quad->state.omega_b[1] - sin(states[0])*_quad->state.omega_b[2];
 }
-double D_psi(double FM[6], Quad *quad)
+double D_psi(double states[])
 {
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-
-    return (sin(quad_state->euler[0])/cos(quad_state->euler[1]))*quad_state->omega_b[1] + (cos(quad_state->euler[0])/cos(quad_state->euler[1]))*quad_state->omega_b[2];
+    return (sin(states[0])/cos(states[1]))*_quad->state.omega_b[1] + (cos(states[0])/cos(states[1]))*_quad->state.omega_b[2];
 }
-double D_N(double FM[6], Quad *quad)
+double D_N(double states[])
 {
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-
-    return quad_state->vel_b[0]*cos(quad_state->euler[2])*cos(quad_state->euler[1]) + quad_state->vel_b[1]*(cos(quad_state->euler[2])*sin(quad_state->euler[1])*sin(quad_state->euler[0]) - sin(quad_state->euler[2])*cos(quad_state->euler[0])) + quad_state->vel_b[2]*(cos(quad_state->euler[2])*sin(quad_state->euler[1])*cos(quad_state->euler[0]) + sin(quad_state->euler[2])*sin(quad_state->euler[0]));
+    return _quad->state.vel_b[0]*cos(states[2])*cos(states[1]) + _quad->state.vel_b[1]*(cos(states[2])*sin(states[1])*sin(states[0]) - sin(states[2])*cos(states[0])) + _quad->state.vel_b[2]*(cos(states[2])*sin(states[1])*cos(states[0]) + sin(states[2])*sin(states[0]));
 }
-double D_E(double FM[6], Quad *quad)
+double D_E(double states[])
 {
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-
-    return quad_state->vel_b[0]*sin(quad_state->euler[2])*cos(quad_state->euler[1]) + quad_state->vel_b[1]*( sin(quad_state->euler[2])*sin(quad_state->euler[1])*sin(quad_state->euler[0]) + cos(quad_state->euler[2])*cos(quad_state->euler[0])) + quad_state->vel_b[2]*(sin(quad_state->euler[2])*sin(quad_state->euler[1])*cos(quad_state->euler[0]) - cos(quad_state->euler[2])*sin(quad_state->euler[0]));
+    return _quad->state.vel_b[0]*sin(states[2])*cos(states[1]) + _quad->state.vel_b[1]*( sin(states[2])*sin(states[1])*sin(states[0]) + cos(states[2])*cos(states[0])) + _quad->state.vel_b[2]*(sin(states[2])*sin(states[1])*cos(states[0]) - cos(states[2])*sin(states[0]));
 }
-double D_D(double FM[6], Quad *quad)
+double D_D(double states[])
 {
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-
-    return quad_state->vel_b[0]*sin(quad_state->euler[1]) + quad_state->vel_b[1]*cos(quad_state->euler[1])*sin(quad_state->euler[0]) + quad_state->vel_b[2]*cos(quad_state->euler[1])*cos(quad_state->euler[0]);
+    return _quad->state.vel_b[0]*sin(states[1]) + _quad->state.vel_b[1]*cos(states[1])*sin(states[0]) + _quad->state.vel_b[2]*cos(states[1])*cos(states[0]);
 }
 
 

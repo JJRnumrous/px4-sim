@@ -151,63 +151,40 @@ double integrate_euler(double sum, double val, double dt)
 
 // **************************************************************************************************************************************************
 // Function:    Derivative Functions for Kinetics
-// Inputs:      Forces and moments, quad states => mass,inertia[3], vel_b[3], omega_b[3]
-// Output:      Value for derivitive at specific states.
+// Inputs:      dt - time; D_X - Derivitive functions; states - in order of D_X; X - integrated states; len - length of states
+// Output:      void
 // **************************************************************************************************************************************************
 // TODO: update quad_state->a_b 
-double *RK4(double dt, vFunctionCall F1,vFunctionCall F2,vFunctionCall F3,vFunctionCall F4,vFunctionCall F5,vFunctionCall F6, double FM[6], Quad *quad,double *ret)
+void integer_rk4(double dt, vFunctionCall D_X[], double states[], double X[], int len)
 {
-    QuadState temp_quad;
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-    temp_quad = (quad->state);
+    int i;
+    double k1[len], k2[len], k3[len], k4[len], states_k2[len], states_k3[len], states_k4[len];
 
-
-    double k1 = dt*F1(FM,temp_quad);
-    double l1 = dt*F2(FM,temp_quad);
-    double m1 = dt*F3(FM,temp_quad);
-    double n1 = dt*F4(FM,temp_quad);
-    double o1 = dt*F5(FM,temp_quad);
-    double p1 = dt*F6(FM,temp_quad);
-    state_adder(&temp_quad, k1,l1,m1,n1,o1,p1,2.0f);
-    double k2 = dt*F1(FM,temp_quad);
-    double l2 = dt*F2(FM,temp_quad);
-    double m2 = dt*F3(FM,temp_quad);
-    double n2 = dt*F4(FM,temp_quad);
-    double o2 = dt*F5(FM,temp_quad);
-    double p2 = dt*F6(FM,temp_quad);
-    state_adder(&temp_quad, k2,l2,m2,n2,o2,p2,2.0f);
-    double k3 = dt*F1(FM,temp_quad);
-    double l3 = dt*F2(FM,temp_quad);
-    double m3 = dt*F3(FM,temp_quad);
-    double n3 = dt*F4(FM,temp_quad);
-    double o3 = dt*F5(FM,temp_quad);
-    double p3 = dt*F6(FM,temp_quad);
-    state_adder(&temp_quad, k3,l3,m3,n3,o3,p3,1.0f);
-    double k4 = dt*F1(FM,temp_quad);
-    double l4 = dt*F2(FM,temp_quad);
-    double m4 = dt*F3(FM,temp_quad);
-    double n4 = dt*F4(FM,temp_quad);
-    double o4 = dt*F5(FM,temp_quad);
-    double p4 = dt*F6(FM,temp_quad);
-    temp_quad = (quad->state);
-    //integrals answer
-    ret[0] += (k1 + 2*k2 + 2*k3 + k4)/6;
-    ret[1] += (l1 + 2*l2 + 2*l3 + l4)/6;
-    ret[2] += (m1 + 2*m2 + 2*m3 + m4)/6;
-    ret[3] += (n1 + 2*n2 + 2*n3 + n4)/6;
-    ret[4] += (o1 + 2*o2 + 2*o3 + o4)/6;
-    ret[5] += (p1 + 2*p2 + 2*p3 + p4)/6;       
-}
-
-void state_adder(QuadState *quad, double k,double l,double m,double n,double o,double p,double devider)
-{
-    quad->vel_b[0] += k/devider;
-    quad->vel_b[1] += l/devider;
-    quad->vel_b[2] += m/devider;
-    quad->omega_b[0] += n/devider;
-    quad->omega_b[1] += o/devider;
-    quad->omega_b[2] += p/devider;
+    for(i=0; i<len;i++)
+    {
+        k1[i] = dt*D_X[i](states);
+        states_k2[i] = states[i] + k1[i]/2.0;
+    }
+    for(i=0; i<len;i++)
+    {
+        k2[i] = dt*D_X[i](states_k2);
+        states_k3[i] = states_k2[i] + k2[i]/2.0;
+    }
+    for(i=0; i<len;i++)
+    {
+        k3[i] = dt*D_X[i](states_k3);
+        states_k4[i] = states_k3[i] + k3[i];
+    }
+    for(i=0; i<len;i++)
+    {
+        k4[i] = dt*D_X[i](states_k4);        
+    }
+    
+    for(i=0; i<len;i++)
+    {
+        X[i] = states[i] + (k1[i] + 2*k2[i] + 2*k3[i] + k4[i])/6.0;
+        
+    }      
 }
 
 uint64_t get_time_usec()

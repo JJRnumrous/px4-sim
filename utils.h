@@ -3,6 +3,9 @@
 
 #include <inttypes.h>
 
+// Defines
+typedef double (*functiontype)(double[], int);
+
 // Constants
 #define GRAVITY 9.80665 // gravity
 #define Pb 101325.0 // static pressure at sea level [Pa]
@@ -28,7 +31,7 @@ void earth_to_body_rotation(double dcm_be[3][3], double rotate_from[3], double r
 double wrap_angle_2pi(double angle);
 double wrap_angle_pi(double angle);
 
-double integrate(double sum, double val, double dt);
+void integrate_rk4(functiontype derivs[], double states[], double integ[], int len, double h);
 double integrate_euler(double sum, double val, double dt);
 
 uint64_t get_time_usec();

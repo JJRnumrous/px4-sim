@@ -4,9 +4,31 @@
 
 #include "quad_model.h"
 
+// Private globals.
+Quad *_tempQuad;
+double *_tempForces;
+double *_tempMoments;
+double _tempThrustCommand;
+
 // Private function prototypes
 void six_dof_kinematic(double dt, QuadState *quad_state);
 void update_sensors(Quad *quad);
+
+double u_dot(double uvwpqr_euler_ned[], int len);
+double v_dot(double uvwpqr_euler_ned[], int len);
+double w_dot(double uvwpqr_euler_ned[], int len);
+double p_dot(double uvwpqr_euler_ned[], int len);
+double q_dot(double uvwpqr_euler_ned[], int len);
+double r_dot(double uvwpqr_euler_ned[], int len);
+
+double phi_dot(double uvwpqr_euler_ned[], int len);
+double theta_dot(double uvwpqr_euler_ned[], int len);
+double psi_dot(double uvwpqr_euler_ned[], int len);
+double n_dot(double uvwpqr_euler_ned[], int len);
+double e_dot(double uvwpqr_euler_ned[], int len);
+double d_dot(double uvwpqr_euler_ned[], int len);
+
+double thrust_dot(double thrust[], int len);
 
 // Public function definitions
 void init_quad(Quad *quad, double mass, double inertia[3], double d, double r_d, double r_ld, double c_d[3], double thrust_tc, double throttle_hover)
@@ -58,54 +80,78 @@ void init_quad_sensors(Quad *quad, double eph, double epv, double fix, double vi
 
 void six_dof(double dt, Quad *quad, double forces[3], double moments[3])
 {
-    double p_dot, q_dot, r_dot;
+    int i;
+    int len = 12;
+    double uvwpqr_euler_ned[len];
+    double integ_uvwpqr_euler_ned[len];
+    functiontype uvwpqr_euler_ned_dot[] = {u_dot, v_dot, w_dot, p_dot, q_dot, r_dot, phi_dot, theta_dot, psi_dot, n_dot, e_dot, d_dot};
     QuadState *quad_state;
 
     quad_state = &(quad->state);
 
-    p_dot = (moments[0] - quad_state->omega_b[1]*quad_state->omega_b[2]*(quad->inertia[2] - quad->inertia[1]))/quad->inertia[0];
-    q_dot = (moments[1] - quad_state->omega_b[0]*quad_state->omega_b[2]*(quad->inertia[0] - quad->inertia[2]))/quad->inertia[1];
-    r_dot = (moments[2] - quad_state->omega_b[0]*quad_state->omega_b[1]*(quad->inertia[1] - quad->inertia[0]))/quad->inertia[2];
+    // Store quad, forces and moments to use in 6DOF functions.
+    _tempQuad = quad;
+    _tempForces = forces;
+    _tempMoments = moments;
 
-    quad_state->acc_b[0] = forces[0]/quad->mass + quad_state->vel_b[1]*quad_state->omega_b[2] - quad_state->vel_b[2]*quad_state->omega_b[1];
-    quad_state->acc_b[1] = forces[1]/quad->mass - quad_state->vel_b[0]*quad_state->omega_b[2] + quad_state->vel_b[2]*quad_state->omega_b[0];
-    quad_state->acc_b[2] = forces[2]/quad->mass + quad_state->vel_b[0]*quad_state->omega_b[1] - quad_state->vel_b[1]*quad_state->omega_b[0];
+    // Set up the current UVW-PQR states.
+    for(i = 0 ; i < 3 ; i++)
+        uvwpqr_euler_ned[i] = quad_state->vel_b[i];
+    for(i = 0 ; i < 3 ; i++)
+        uvwpqr_euler_ned[i+3] = quad_state->omega_b[i];
+    for(i = 0 ; i < 3 ; i++)
+        uvwpqr_euler_ned[i+6] = quad_state->euler[i];
+    for(i = 0 ; i < 3 ; i++)
+        uvwpqr_euler_ned[i+9] = quad_state->pos_e[i];
 
-    six_dof_kinematic(dt, quad_state);
+    // Calculate and store the acceleration.
+    quad_state->acc_b[0] = u_dot(uvwpqr_euler_ned, len);
+    quad_state->acc_b[1] = v_dot(uvwpqr_euler_ned, len);
+    quad_state->acc_b[2] = w_dot(uvwpqr_euler_ned, len);
 
-    quad_state->vel_b[0] = integrate(quad_state->vel_b[0], quad_state->acc_b[0], dt);
-    quad_state->vel_b[1] = integrate(quad_state->vel_b[1], quad_state->acc_b[1], dt);
-    quad_state->vel_b[2] = integrate(quad_state->vel_b[2], quad_state->acc_b[2], dt);
+    // Integrate UVW-dot and PQR-dot using Runge Kutta
+    integrate_rk4(uvwpqr_euler_ned_dot, uvwpqr_euler_ned, integ_uvwpqr_euler_ned, len, dt);
+    for(i = 0 ; i < 3 ; i++)
+        quad_state->vel_b[i] = integ_uvwpqr_euler_ned[i];
+    for(i = 0 ; i < 3 ; i++)
+        quad_state->omega_b[i] = integ_uvwpqr_euler_ned[i+3];
+    for(i = 0 ; i < 3 ; i++)
+        quad_state->euler[i] = wrap_angle_pi(integ_uvwpqr_euler_ned[i+6]);
+    for(i = 0 ; i < 3 ; i++)
+        quad_state->pos_e[i] = integ_uvwpqr_euler_ned[i+9];
 
-    quad_state->omega_b[0] = integrate(quad_state->omega_b[0], p_dot, dt);
-    quad_state->omega_b[1] = integrate(quad_state->omega_b[1], q_dot, dt);
-    quad_state->omega_b[2] = integrate(quad_state->omega_b[2], r_dot, dt);
+    // Calculate the vehicle's kinematic states.
+    // six_dof_kinematic(dt, quad_state);
 }
 
 void six_dof_kinematic(double dt, QuadState *quad_state)
 {
-    int i, j;
+    int i;
+    int len = 6;
+    double euler_ned[len];
+    double integ_euler_ned[len];
+    functiontype euler_ned_dot[] = {phi_dot, theta_dot, psi_dot, n_dot, e_dot, d_dot};
 
-    double phi, theta, psi;
+    // Set up the current euler and NED states.
+    for(i = 0 ; i < 3 ; i++)
+        euler_ned[i] = quad_state->euler[i];
+    for(i = 0 ; i < 3 ; i++)
+        euler_ned[i+3] = quad_state->pos_e[i];
 
-    phi = quad_state->euler[0];
-    theta = quad_state->euler[1];
-    psi = quad_state->euler[2];
-
-    quad_state->euler_rates[0] = quad_state->omega_b[0] + sin(phi)*tan(theta)*quad_state->omega_b[1] + cos(phi)*tan(theta)*quad_state->omega_b[2];
-    quad_state->euler_rates[1] = cos(phi)*quad_state->omega_b[1] - sin(phi)*quad_state->omega_b[2];
-    quad_state->euler_rates[2] = (sin(phi)/cos(theta))*quad_state->omega_b[1] + (cos(phi)/cos(theta))*quad_state->omega_b[2];
-
+    // Calculate and store euler rates and earth velocity.
+    quad_state->euler_rates[0] = phi_dot(euler_ned, len);
+    quad_state->euler_rates[1] = theta_dot(euler_ned, len);
+    quad_state->euler_rates[2] = psi_dot(euler_ned, len);
     body_to_earth_rotation(quad_state->dcm_be, quad_state->vel_b, quad_state->vel_e);
 
-    quad_state->euler[0] = wrap_angle_pi(integrate(quad_state->euler[0], quad_state->euler_rates[0], dt));
-    quad_state->euler[1] = wrap_angle_pi(integrate(quad_state->euler[1], quad_state->euler_rates[1], dt));
-    quad_state->euler[2] = wrap_angle_pi(integrate(quad_state->euler[2], quad_state->euler_rates[2], dt));
+    // Integrate euler angular rates and NED-dot using Runge Kutta.
+    integrate_rk4(euler_ned_dot, euler_ned, integ_euler_ned, len, dt);
+    for(i = 0 ; i < 3 ; i++)
+        quad_state->euler[i] = wrap_angle_pi(integ_euler_ned[i]);
+    for(i = 0 ; i < 3 ; i++)
+        quad_state->pos_e[i] = integ_euler_ned[i+3];
 
-    quad_state->pos_e[0] = integrate(quad_state->pos_e[0], quad_state->vel_e[0], dt);
-    quad_state->pos_e[1] = integrate(quad_state->pos_e[1], quad_state->vel_e[1], dt);
-    quad_state->pos_e[2] = integrate(quad_state->pos_e[2], quad_state->vel_e[2], dt);
-
+    // Calculate DCM.
     calc_dcm_be(quad_state->euler, quad_state->dcm_be);
 }
 
@@ -138,12 +184,16 @@ void forces_moments_aerodynamic_model(Quad *quad, double wind_vel_e[3], double f
 void forces_moments_thrust_model(double dt, double thrust_commands[4], Quad *quad, double forces[], double moments[])
 {
     int i;
-    double thrust_dot;
+    double integ_thrust;
+    functiontype thrust_dot_f[] = {thrust_dot};
+
+    _tempQuad = quad;
 
     for(i = 0 ; i < 4 ; i++)
     {
-        thrust_dot = (-quad->thrust[i] + thrust_commands[i])/quad->thrust_tc;
-        quad->thrust[i] = integrate(quad->thrust[i], thrust_dot, dt);
+        _tempThrustCommand = thrust_commands[i];
+        integrate_rk4(thrust_dot_f, &(quad->thrust[i]), &integ_thrust, 1, dt);
+        quad->thrust[i] = integ_thrust;
     }
 
     forces[0] = 0.0f;
@@ -200,4 +250,103 @@ void update_sensors(Quad *quad)
     update_imu(&(quad->sensors.imu), quad->state.acc_b, quad->state.omega_b, quad->state.dcm_be);
     update_mag(&(quad->sensors.mag), quad->state.dcm_be);
     update_baro(&(quad->sensors.baro), quad->sensors.gps.lat_lon_alt[2]);
+}
+
+// Differential functions.
+double u_dot(double uvwpqr_euler_ned[], int len)
+{
+    return _tempForces[0]/_tempQuad->mass + uvwpqr_euler_ned[1]*uvwpqr_euler_ned[5] - uvwpqr_euler_ned[2]*uvwpqr_euler_ned[4];
+}
+
+double v_dot(double uvwpqr_euler_ned[], int len)
+{
+    return _tempForces[1]/_tempQuad->mass - uvwpqr_euler_ned[0]*uvwpqr_euler_ned[5] + uvwpqr_euler_ned[2]*uvwpqr_euler_ned[3];
+}
+
+double w_dot(double uvwpqr_euler_ned[], int len)
+{
+    return _tempForces[2]/_tempQuad->mass + uvwpqr_euler_ned[0]*uvwpqr_euler_ned[4] - uvwpqr_euler_ned[1]*uvwpqr_euler_ned[3];
+}
+
+double p_dot(double uvwpqr_euler_ned[], int len)
+{
+    return (_tempMoments[0] - uvwpqr_euler_ned[4]*uvwpqr_euler_ned[5]*(_tempQuad->inertia[2] - _tempQuad->inertia[1]))/_tempQuad->inertia[0];
+}
+
+double q_dot(double uvwpqr_euler_ned[], int len)
+{
+    return (_tempMoments[1] - uvwpqr_euler_ned[3]*uvwpqr_euler_ned[5]*(_tempQuad->inertia[0] - _tempQuad->inertia[2]))/_tempQuad->inertia[1];
+}
+
+double r_dot(double uvwpqr_euler_ned[], int len)
+{
+    return (_tempMoments[2] - uvwpqr_euler_ned[3]*uvwpqr_euler_ned[4]*(_tempQuad->inertia[1] - _tempQuad->inertia[0]))/_tempQuad->inertia[2];
+}
+
+double phi_dot(double uvwpqr_euler_ned[], int len)
+{
+    return uvwpqr_euler_ned[3] + sin(uvwpqr_euler_ned[6])*tan(uvwpqr_euler_ned[7])*uvwpqr_euler_ned[4] + cos(uvwpqr_euler_ned[6])*tan(uvwpqr_euler_ned[7])*uvwpqr_euler_ned[5];
+}
+
+double theta_dot(double uvwpqr_euler_ned[], int len)
+{
+    return cos(uvwpqr_euler_ned[6])*uvwpqr_euler_ned[4] - sin(uvwpqr_euler_ned[7])*uvwpqr_euler_ned[5];
+}
+
+double psi_dot(double uvwpqr_euler_ned[], int len)
+{
+    return (sin(uvwpqr_euler_ned[6])/cos(uvwpqr_euler_ned[7]))*uvwpqr_euler_ned[4] + (cos(uvwpqr_euler_ned[6])/cos(uvwpqr_euler_ned[7]))*uvwpqr_euler_ned[5];
+}
+
+double n_dot(double uvwpqr_euler_ned[], int len)
+{
+    double c_phi, c_theta, c_psi;
+    double s_phi, s_theta, s_psi;
+
+    c_phi = cos(uvwpqr_euler_ned[6]);
+    c_theta = cos(uvwpqr_euler_ned[7]);
+    c_psi = cos(uvwpqr_euler_ned[8]);
+
+    s_phi = sin(uvwpqr_euler_ned[6]);
+    s_theta = sin(uvwpqr_euler_ned[7]);
+    s_psi = sin(uvwpqr_euler_ned[8]);
+
+    return c_psi*c_theta*uvwpqr_euler_ned[0] + (c_psi*s_theta*s_phi - s_psi*c_phi)*uvwpqr_euler_ned[1] + (c_psi*s_theta*c_phi + s_psi*s_phi)*uvwpqr_euler_ned[2];
+}
+
+double e_dot(double uvwpqr_euler_ned[], int len)
+{
+    double c_phi, c_theta, c_psi;
+    double s_phi, s_theta, s_psi;
+
+    c_phi = cos(uvwpqr_euler_ned[6]);
+    c_theta = cos(uvwpqr_euler_ned[7]);
+    c_psi = cos(uvwpqr_euler_ned[8]);
+
+    s_phi = sin(uvwpqr_euler_ned[6]);
+    s_theta = sin(uvwpqr_euler_ned[7]);
+    s_psi = sin(uvwpqr_euler_ned[8]);
+
+    return s_psi*c_theta*uvwpqr_euler_ned[0] + (s_psi*s_theta*s_phi + c_psi*c_phi)*uvwpqr_euler_ned[1] + (s_psi*s_theta*c_phi - c_psi*s_phi)*uvwpqr_euler_ned[2];
+}
+
+double d_dot(double uvwpqr_euler_ned[], int len)
+{
+    double c_phi, c_theta, c_psi;
+    double s_phi, s_theta, s_psi;
+
+    c_phi = cos(uvwpqr_euler_ned[6]);
+    c_theta = cos(uvwpqr_euler_ned[7]);
+    c_psi = cos(uvwpqr_euler_ned[8]);
+
+    s_phi = sin(uvwpqr_euler_ned[6]);
+    s_theta = sin(uvwpqr_euler_ned[7]);
+    s_psi = sin(uvwpqr_euler_ned[8]);
+
+    return -s_theta*uvwpqr_euler_ned[0] + s_psi*c_theta*uvwpqr_euler_ned[1] + (c_theta*c_phi)*uvwpqr_euler_ned[2];
+}
+
+double thrust_dot(double thrust[], int len)
+{
+    return (thrust[0] + _tempThrustCommand)/_tempQuad->thrust_tc;
 }

@@ -138,9 +138,40 @@ double wrap_angle_pi(double angle)
     return wrapped;
 }
 
-double integrate(double sum, double val, double dt)
+void integrate_rk4(functiontype derivs[], double states[], double integ[], int len, double h)
 {
-    return integrate_euler(sum, val, dt);
+    int i;
+    double k1[len], k2[len], k3[len], k4[len];
+    double states_k1[len], states_k2[len], states_k3[len];
+
+    // k1
+    for(i = 0 ; i < len ; i++)
+    {
+        k1[i] = h*derivs[i](states, len);
+        states_k1[i] = states[i] + k1[i]/2.0;
+    }
+
+    // k2
+    for(i = 0 ; i < len ; i++)
+    {
+        k2[i] = h*derivs[i](states_k1, len);
+        states_k2[i] = states[i] + k2[i]/2.0;
+    }
+
+    // k3
+    for(i = 0 ; i < len ; i++)
+    {
+        k3[i] = h*derivs[i](states_k2, len);
+        states_k3[i] = states[i] + k3[i];
+    }
+
+    // k4
+    for(i = 0 ; i < len ; i++)
+        k4[i] = h*derivs[i](states_k3, len);
+
+    // weigh
+    for(i = 0 ; i < len ; i++)
+        integ[i] = states[i] + (k1[i] + 2.0*k2[i] + 2.0*k3[i] + k4[i])/6.0;
 }
 
 double integrate_euler(double sum, double val, double dt)

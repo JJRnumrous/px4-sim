@@ -10,6 +10,7 @@
 
 // Function prototypes.
 void testQuadDynamics();
+void printStates(Quad *quad);
 void printSensors(Quad *quad);
 void sighandler(int sig);
 
@@ -62,58 +63,59 @@ int advance_sim(uint64_t time_usec, double dt, double wind_vel_e[3])
 
 int main()
 {
-    int i;
-    double dt;
-    uint64_t cur_time;
-    uint64_t prev_time;
-    uint64_t sensor_update;
-    double wind_vel_e[3];
-    int result;
-    double excess_time;
+    // int i;
+    // double dt;
+    // uint64_t cur_time;
+    // uint64_t prev_time;
+    // uint64_t sensor_update;
+    // double wind_vel_e[3];
+    // int result;
+    // double excess_time;
 
-    signal(SIGINT, sighandler); // Exit simulation if Ctrl-C is pressed
+    // signal(SIGINT, sighandler); // Exit simulation if Ctrl-C is pressed
 
-    // Connect to PX4 and initialize physics sim
-    printf("Connecting to PX4...\n");
-    result = init_sim();
-    if(result < 0)
-    {
-        printf("Failed! Result: %d\n", result);
-        return 0;
-    }
-    printf("Connected!\n");
+    // // Connect to PX4 and initialize physics sim
+    // printf("Connecting to PX4...\n");
+    // result = init_sim();
+    // if(result < 0)
+    // {
+    //     printf("Failed! Result: %d\n", result);
+    //     return 0;
+    // }
+    // printf("Connected!\n");
 
-    // Initialise variables
-    cur_time = get_time_usec();
-    prev_time = cur_time;
-    sensor_update = cur_time;
+    // // Initialise variables
+    // cur_time = get_time_usec();
+    // prev_time = cur_time;
+    // sensor_update = cur_time;
 
-    for(i = 0 ; i < 3 ; i++)
-        wind_vel_e[i] = 0.0f;
+    // for(i = 0 ; i < 3 ; i++)
+    //     wind_vel_e[i] = 0.0f;
 
-    // Loop
-    while(true)
-    {
-        // Update the physics sim with a fixed time
-        cur_time = get_time_usec();
-        if((int64_t)(cur_time - sensor_update) >= 0)
-        {
-            dt = (double)((cur_time - prev_time) * 1e-6);
-            // printf("dt: %2.3f ms\n", dt * 1e3);
-            advance_sim(cur_time, dt, wind_vel_e);
-            prev_time = cur_time;
+    // // Loop
+    // while(true)
+    // {
+    //     // Update the physics sim with a fixed time
+    //     cur_time = get_time_usec();
+    //     if((int64_t)(cur_time - sensor_update) >= 0)
+    //     {
+    //         dt = (double)((cur_time - prev_time) * 1e-6);
+    //         printf("dt: %2.3f ms\n", dt * 1e3);
+    //         advance_sim(cur_time, dt, wind_vel_e);
+    //         prev_time = cur_time;
 
-            // Calculate next time the physics sim should update
-            sensor_update = cur_time + (uint64_t)(1000000.0 / SENSOR_FREQ);
-        }
+    //         // Calculate next time the physics sim should update
+    //         sensor_update = cur_time + (uint64_t)(1000000.0 / SENSOR_FREQ);
+    //     }
         
-        // Poll for MAVLink messages: receive actuator controls from PX4 and when in HIL - send messages from autopilo to GCS and vice-versa.
-        result = pollMavlinkMessage();
-        if(result < 0)
-            return result;
-        usleep(10); // 10 us
-    }
+    //     // Poll for MAVLink messages: receive actuator controls from PX4 and when in HIL - send messages from autopilo to GCS and vice-versa.
+    //     result = pollMavlinkMessage();
+    //     if(result < 0)
+    //         return result;
+    //     usleep(10); // 10 us
+    // }
 
+    testQuadDynamics();
     return 0;
 }
 
@@ -128,11 +130,15 @@ void sighandler(int sig)
 void testQuadDynamics()
 {
     int i;
-    double sim_time = 2;
+    double dt = 0;
+    double sim_time = 0;
+    double stop_time = 1.0;//(double)(1.0 / SENSOR_FREQ);
     double wind_vel_e[3];
     double inertia[3];
     double c_d[3];
     double thrust_commands[4];
+    double forces[3];
+    double moments[3];
 
     // Initialise quad model
     inertia[0] = I_XX;
@@ -146,19 +152,77 @@ void testQuadDynamics()
     init_quad_sensors(&quad, GPS_EPH, GPS_EPV, GPS_FIX, GPS_NUM_SATS, GPS_LAT_LON_NOISE, GPS_ALT_NOISE, GPS_SPEED_NOISE, IMU_ACC_NOISE, IMU_GYRO_NOISE, MAG_DECL, MAG_INCL, MAG_SCALE, MAG_NOISE, BARO_TEMP);
 
     // Initialise wind and thrust
-    for(i = 0 ; i < 3 ; i++)
-        wind_vel_e[i] = 0.0f;
+    // for(i = 0 ; i < 3 ; i++)
+    //     wind_vel_e[i] = 0.0f;
     
-    thrust_commands[0] = 0.3 * 0.5 * 15 * GRAVITY;
-    thrust_commands[1] = 0.6 * 0.5 * 15 * GRAVITY;
-    thrust_commands[2] = 0.7 * 0.5 * 15 * GRAVITY;
-    thrust_commands[3] = 0.6 * 0.5 * 15 * GRAVITY;
+    // thrust_commands[0] = 0.3 * 0.5 * 15 * GRAVITY;
+    // thrust_commands[1] = 0.6 * 0.5 * 15 * GRAVITY;
+    // thrust_commands[2] = 0.7 * 0.5 * 15 * GRAVITY;
+    // thrust_commands[3] = 0.6 * 0.5 * 15 * GRAVITY;
 
-    for(i = 0 ; i < (sim_time*SENSOR_FREQ) ; i++)
+    // Initialise forces and moments
+    forces[0] = 1;
+    forces[1] = 2;
+    forces[2] = 3;
+
+    moments[0] = 4;
+    moments[1] = 5;
+    moments[2] = 6;
+
+    while(sim_time <= stop_time)
     {
-        update_quad(&quad, thrust_commands, wind_vel_e, (double)(1.0 / SENSOR_FREQ));
-        printSensors(&quad);
+        // update_quad(&quad, thrust_commands, wind_vel_e, (double)(1.0 / SENSOR_FREQ));
+        // printSensors(&quad);
+
+        printf("t: %f\n", sim_time);
+        six_dof(dt, &quad, forces, moments);
+        printStates(&quad);
+
+        dt = (double)(1.0 / SENSOR_FREQ);
+        sim_time += dt;
     }
+}
+
+void printStates(Quad *quad)
+{
+    int i;
+
+    printf("Acceleration (Body):\n");
+    for(i = 0 ; i < 3 ; i++)
+        printf("%4.9f\t", quad->state.acc_b[i]);
+    printf("\n");
+
+    printf("Velocity (Body):\n");
+    for(i = 0 ; i < 3 ; i++)
+        printf("%4.9f\t", quad->state.vel_b[i]);
+    printf("\n");
+
+    printf("Omega (Body):\n");
+    for(i = 0 ; i < 3 ; i++)
+        printf("%4.9f\t", quad->state.omega_b[i]);
+    printf("\n");
+
+    printf("Euler Rates:\n");
+    for(i = 0 ; i < 3 ; i++)
+        printf("%4.9f\t", quad->state.euler_rates[i]);
+    printf("\n");
+
+    printf("Euler:\n");
+    for(i = 0 ; i < 3 ; i++)
+        printf("%4.9f\t", quad->state.euler[i]);
+    printf("\n");
+
+    printf("Velocity (earth):\n");
+    for(i = 0 ; i < 3 ; i++)
+        printf("%4.9f\t", quad->state.vel_e[i]);
+    printf("\n");
+
+    printf("Position (earth):\n");
+    for(i = 0 ; i < 3 ; i++)
+        printf("%4.9f\t", quad->state.pos_e[i]);
+    printf("\n");
+
+    printf("\n");
 }
 
 void printSensors(Quad *quad)

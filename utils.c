@@ -81,6 +81,8 @@ void calc_dcm_be(double euler[3], double dcm_be[3][3])
     dcm_be[2][2] = c_theta*c_phi;
 }
 
+
+// TODO : not used?
 void body_to_earth_rotation(double dcm_be[3][3], double rotate_from[3], double rotate_to[3])
 {
     int i, j;
@@ -154,7 +156,6 @@ double integrate_euler(double sum, double val, double dt)
 // Inputs:      dt - time; D_X - Derivitive functions; states - in order of D_X; X - integrated states; len - length of states
 // Output:      void
 // **************************************************************************************************************************************************
-// TODO: update quad_state->a_b 
 void integer_rk4(double dt, vFunctionCall D_X[], double states[], double X[], int len)
 {
     int i;
@@ -163,17 +164,17 @@ void integer_rk4(double dt, vFunctionCall D_X[], double states[], double X[], in
     for(i=0; i<len;i++)
     {
         k1[i] = dt*D_X[i](states);
-        states_k2[i] = states[i] + k1[i]/2.0;
+        states_k2[i] = states[i] + k1[i]/2.0;        
     }
     for(i=0; i<len;i++)
     {
         k2[i] = dt*D_X[i](states_k2);
-        states_k3[i] = states_k2[i] + k2[i]/2.0;
+        states_k3[i] = states[i] + k2[i]/2.0;
     }
     for(i=0; i<len;i++)
     {
         k3[i] = dt*D_X[i](states_k3);
-        states_k4[i] = states_k3[i] + k3[i];
+        states_k4[i] = states[i] + k3[i];
     }
     for(i=0; i<len;i++)
     {
@@ -182,8 +183,7 @@ void integer_rk4(double dt, vFunctionCall D_X[], double states[], double X[], in
     
     for(i=0; i<len;i++)
     {
-        X[i] = states[i] + (k1[i] + 2*k2[i] + 2*k3[i] + k4[i])/6.0;
-        
+        X[i] = states[i] + (k1[i] + 2.0*k2[i] + 2.0*k3[i] + k4[i])/6.0;        
     }      
 }
 

@@ -10,7 +10,9 @@
 
 // Function prototypes.
 void testQuadDynamics();
+void test6DOF();
 void printSensors(Quad *quad);
+void print6DOF(Quad quad);
 void sighandler(int sig);
 
 // Function definitions.
@@ -115,64 +117,7 @@ int main()
         usleep(10); // 10 us
     }
 */
-    double time = 0;
-    double dt = 0.02;
-    int i;
-    Quad *quad;
-    QuadState *quad_state;
-    quad_state = &(quad->state);
-
-    double forces[3], moments[3];
-    forces[0] = 1;
-    forces[1] = 1;
-    forces[2] = 1;
-    moments[0] = 2;
-    moments[1] = 2;
-    moments[2] = 2;
-
-    quad->mass = 1.5;
-    quad->inertia[0] = 0.5;
-    quad->inertia[1] = 0.5;
-    quad->inertia[2] = 0.5;
-
-    quad_state->vel_b[0] = 0;
-    quad_state->vel_b[1] = 0;
-    quad_state->vel_b[2] = 0;
-    quad_state->omega_b[0] = 0;
-    quad_state->omega_b[1] = 0;
-    quad_state->omega_b[2] = 0;
-
-    quad_state->euler[0] = 0;
-    quad_state->euler[1] = 0;
-    quad_state->euler[2] = 0;
-    quad_state->pos_e[0] = 0;
-    quad_state->pos_e[1] = 0;
-    quad_state->pos_e[2] = 0;
-
-    while(time < 10){
-        six_dof(dt,quad,forces,moments);
-        time += dt;
-   
-
-    }
-    
-    printf("UVW_body:\n");
-    for(i = 0 ; i < 3 ; i++)
-        printf("%4.6f\t", quad_state->vel_b[i]);
-    printf("\n");
-
-    printf("PQR_body:\n");
-    for(i = 0 ; i < 3 ; i++)
-        printf("%4.6f\t", quad_state->omega_b[i]);
-    printf("\n");
-
-    printf("Acc_body:\n");
-    for(i = 0 ; i < 3 ; i++)
-        printf("%4.6f\t", quad_state->acc_b[i]);
-    printf("\n");
-
-
-
+   test6DOF();
     return 0;
 }
 
@@ -192,6 +137,7 @@ void testQuadDynamics()
     double inertia[3];
     double c_d[3];
     double thrust_commands[4];
+
 
     // Initialise quad model
     inertia[0] = I_XX;
@@ -219,6 +165,83 @@ void testQuadDynamics()
         printSensors(&quad);
     }
 }
+
+/* *************************************************************************************************************************************************
+* Function:     For testing Runga Kutta and 6DOF equations
+*
+*
+************************************************************************************************************************************************** */
+void test6DOF()
+{
+    int i;
+    double sim_time = 400.0/SENSOR_FREQ;
+    double inertia[3];
+    double c_d[3];    
+    
+    // Initialise quad model
+    inertia[0] = I_XX;
+    inertia[1] = I_YY;
+    inertia[2] = I_ZZ;
+
+    for(i = 0 ; i < 3 ; i++)
+        c_d[i] = C_D;
+
+    init_quad(&quad, MASS, inertia, D_ARM, R_D, R_LD, c_d, THRUST_TC, THRUST_HOVER_NORM * THRUST_MAX_FORCE);
+   
+    double forces[3], moments[3];
+    forces[0] = 1;
+    forces[1] = 2;
+    forces[2] = 3;
+    moments[0] = 4;
+    moments[1] = 5;
+    moments[2] = 6;
+
+    
+    for(i=1; i <= (sim_time*SENSOR_FREQ) ; i++)
+    {
+        six_dof((1.0/SENSOR_FREQ),&quad,forces,moments);
+        //printf("Forces %d: \t %f \n",i,quad.state.omega_b[0]);
+        print6DOF(quad);
+    }    
+    
+    
+}
+
+void print6DOF(Quad quad)
+{
+    int i = 0;
+    printf("\nVel_body:\t");
+    for(i = 0 ; i < 3 ; i++)
+        printf("%4.6f\t", quad.state.vel_b[i]);
+    printf("\n");
+
+    printf("Omega_body:\t");
+    for(i = 0 ; i < 3 ; i++)
+        printf("%4.6f\t", quad.state.omega_b[i]);
+    printf("\n");
+    
+    printf("Acc_body:\t");
+    for(i = 0 ; i < 3 ; i++)
+        printf("%4.6f\t", quad.state.acc_b[i]);
+    printf("\n");
+
+    printf("Euler_rates:\t");
+    for(i = 0 ; i < 3 ; i++)
+        printf("%4.6f\t", quad.state.euler_rates[i]);
+    printf("\n");
+
+    printf("Euler:\t\t");
+    for(i = 0 ; i < 3 ; i++)
+
+    printf("%4.6f\t", 180.0*quad.state.euler[i]/M_PI);
+    printf("\n");
+    printf("Pos_e:\t\t");
+    for(i = 0 ; i < 3 ; i++)
+        printf("%4.6f\t", quad.state.pos_e[i]);
+    printf("\n");
+   
+}
+
 
 void printSensors(Quad *quad)
 {

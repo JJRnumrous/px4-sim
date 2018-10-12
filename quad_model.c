@@ -76,11 +76,16 @@ void init_quad_sensors(Quad *quad, double eph, double epv, double fix, double vi
 void six_dof(double dt, Quad *quad, double forces[3], double moments[3])
 {
     int i,len;
+    /*
     len = 6;
     double uvwpqr[len], uvwpqr_integ[len], euler[len], NED[len], euler_integ[len], NED_integ[len];
     vFunctionCall uvwpqr_dot[] = {D_U, D_V, D_W, D_P, D_Q, D_R};
     vFunctionCall euler_dot[] = {D_phi, D_theta,D_psi};
-    vFunctionCall NED_dot[]   = {D_N, D_E, D_D};
+    vFunctionCall NED_dot[]   = {D_N, D_E, D_D};*/
+
+    int tlen = 12;
+    double total[tlen], total_integ[tlen];
+    vFunctionCall total_dot[] = {D_U, D_V, D_W, D_P, D_Q, D_R,D_phi, D_theta,D_psi,D_N, D_E, D_D};
 
     QuadState *quad_state;
     quad_state = &(quad->state);
@@ -90,6 +95,44 @@ void six_dof(double dt, Quad *quad, double forces[3], double moments[3])
     _Moments = moments;
     _quad    = quad;
 
+    for(i=0; i<tlen;i++){
+        if(i<3)             total[i] = quad_state->vel_b[i];
+        if((i>=3)&&(i<6))   total[i] = quad_state->omega_b[i-3];
+        if((i>=6)&&(i<9))   total[i] = quad_state->euler[i-6];
+        if(i>=9)            total[i] = quad_state->pos_e[i-9];
+    }
+
+    integer_rk4(dt, total_dot,total,total_integ,tlen);    
+    quad_state->vel_b[0] = total_integ[0];
+    quad_state->vel_b[1] = total_integ[1];
+    quad_state->vel_b[2] = total_integ[2];
+    quad_state->omega_b[0] = total_integ[3];
+    quad_state->omega_b[1] = total_integ[4];
+    quad_state->omega_b[2] = total_integ[5];
+    quad_state->euler[0]   = wrap_angle_2pi(total_integ[6]);
+    quad_state->euler[1]   = wrap_angle_2pi(total_integ[7]);
+    quad_state->euler[2]   = wrap_angle_2pi(total_integ[8]);
+    quad_state->pos_e[0]   = total_integ[9];
+    quad_state->pos_e[1]   = total_integ[10];
+    quad_state->pos_e[2]   = total_integ[11];
+
+    calc_dcm_be(quad_state->euler, quad_state->dcm_be);
+   
+    // The body accel and euler rates are updated with most recent states
+
+    // calculate and set the euler rates
+    quad_state->euler_rates[0] = D_phi(total_integ);
+    quad_state->euler_rates[1] = D_theta(total_integ);
+    quad_state->euler_rates[2] = D_psi(total_integ);
+
+            //body_to_earth_rotation(quad_state->dcm_be, quad_state->vel_b, quad_state->vel_e);
+   
+    //calculate and set new linear body accel for timestep
+    quad_state->acc_b[0] = D_U(total_integ);
+    quad_state->acc_b[1] = D_V(total_integ);
+    quad_state->acc_b[2] = D_W(total_integ); 
+
+    /*
     // populate the states for timestep
     for(i=0;i<3;i++)
     {
@@ -138,6 +181,7 @@ void six_dof(double dt, Quad *quad, double forces[3], double moments[3])
     quad_state->acc_b[0] = D_U(uvwpqr_integ);
     quad_state->acc_b[1] = D_V(uvwpqr_integ);
     quad_state->acc_b[2] = D_W(uvwpqr_integ); 
+    */
 }
 
 /* **************************************************************************************************************************************************
@@ -181,27 +225,33 @@ double D_R(double states[])
 ****************************************************************************************************************************************************/
 double D_phi(double states[])
 {
-    return _quad->state.omega_b[0] + sin(states[0])*tan(states[1])*_quad->state.omega_b[1] + cos(states[0])*tan(states[6])*_quad->state.omega_b[2];
+    //return _quad->state.omega_b[0] + sin(states[0])*tan(states[1])*_quad->state.omega_b[1] + cos(states[0])*tan(states[6])*_quad->state.omega_b[2];
+    return states[3] + sin(states[6])*tan(states[7])*states[4] + cos(states[6])*tan(states[7])*states[5];
 }
 double D_theta(double states[])
 {
-    return cos(states[0])*_quad->state.omega_b[1] - sin(states[0])*_quad->state.omega_b[2];
+    //return cos(states[0])*_quad->state.omega_b[1] - sin(states[0])*_quad->state.omega_b[2];
+    return cos(states[6])*states[4] - sin(states[6])*states[5];
 }
 double D_psi(double states[])
 {
-    return (sin(states[0])/cos(states[1]))*_quad->state.omega_b[1] + (cos(states[0])/cos(states[1]))*_quad->state.omega_b[2];
+    //return (sin(states[0])/cos(states[1]))*_quad->state.omega_b[1] + (cos(states[0])/cos(states[1]))*_quad->state.omega_b[2];
+    return (sin(states[6])/cos(states[7]))*states[4] + (cos(states[6])/cos(states[7]))*states[5];
 }
 double D_N(double states[])
 {
-    return _quad->state.vel_b[0]*cos(_quad->state.euler[2])*cos(_quad->state.euler[1]) + _quad->state.vel_b[1]*(cos(_quad->state.euler[2])*sin(_quad->state.euler[1])*sin(_quad->state.euler[0]) - sin(_quad->state.euler[2])*cos(_quad->state.euler[0])) + _quad->state.vel_b[2]*(cos(_quad->state.euler[2])*sin(_quad->state.euler[1])*cos(_quad->state.euler[0]) + sin(_quad->state.euler[2])*sin(_quad->state.euler[0]));
+    //return _quad->state.vel_b[0]*cos(_quad->state.euler[2])*cos(_quad->state.euler[1]) + _quad->state.vel_b[1]*(cos(_quad->state.euler[2])*sin(_quad->state.euler[1])*sin(_quad->state.euler[0]) - sin(_quad->state.euler[2])*cos(_quad->state.euler[0])) + _quad->state.vel_b[2]*(cos(_quad->state.euler[2])*sin(_quad->state.euler[1])*cos(_quad->state.euler[0]) + sin(_quad->state.euler[2])*sin(_quad->state.euler[0]));
+    return states[0]*cos(states[8])*cos(states[7]) + states[1]*(cos(states[8])*sin(states[7])*sin(states[6]) - sin(states[8])*cos(states[6])) + states[2]*(cos(states[8])*sin(states[7])*cos(states[6]) + sin(states[8])*sin(states[6]));
 }
 double D_E(double states[])
 {
-    return _quad->state.vel_b[0]*sin(_quad->state.euler[2])*cos(_quad->state.euler[1]) + _quad->state.vel_b[1]*( sin(_quad->state.euler[2])*sin(_quad->state.euler[1])*sin(_quad->state.euler[0]) + cos(_quad->state.euler[2])*cos(_quad->state.euler[0])) + _quad->state.vel_b[2]*(sin(_quad->state.euler[2])*sin(_quad->state.euler[1])*cos(_quad->state.euler[0]) - cos(_quad->state.euler[2])*sin(_quad->state.euler[0]));
+    //return _quad->state.vel_b[0]*sin(_quad->state.euler[2])*cos(_quad->state.euler[1]) + _quad->state.vel_b[1]*( sin(_quad->state.euler[2])*sin(_quad->state.euler[1])*sin(_quad->state.euler[0]) + cos(_quad->state.euler[2])*cos(_quad->state.euler[0])) + _quad->state.vel_b[2]*(sin(_quad->state.euler[2])*sin(_quad->state.euler[1])*cos(_quad->state.euler[0]) - cos(_quad->state.euler[2])*sin(_quad->state.euler[0]));
+    return states[0]*sin(states[8])*cos(states[7]) + states[1]*(sin(states[8])*sin(states[7])*sin(states[6]) + cos(states[8])*cos(states[6])) + states[2]*(sin(states[8])*sin(states[7])*cos(states[6]) - cos(states[8])*sin(states[6]));
 }
 double D_D(double states[])
 {
-    return _quad->state.vel_b[0]*sin(_quad->state.euler[1]) + _quad->state.vel_b[1]*cos(_quad->state.euler[1])*sin(_quad->state.euler[0]) + _quad->state.vel_b[2]*cos(_quad->state.euler[1])*cos(_quad->state.euler[0]);
+    //return _quad->state.vel_b[0]*sin(_quad->state.euler[1]) + _quad->state.vel_b[1]*cos(_quad->state.euler[1])*sin(_quad->state.euler[0]) + _quad->state.vel_b[2]*cos(_quad->state.euler[1])*cos(_quad->state.euler[0]);
+    return -states[1]*sin(states[7]) + states[1]*cos(states[7])*sin(states[6]) + states[2]*cos(states[7])*cos(states[6]);
 }
 
 void forces_moments_aerodynamic_model(Quad *quad, double wind_vel_e[3], double forces[], double moments[])

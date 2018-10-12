@@ -174,7 +174,7 @@ void testQuadDynamics()
 void test6DOF()
 {
     int i;
-    double sim_time = 400.0/SENSOR_FREQ;
+    double sim_time = 1000.0/SENSOR_FREQ;
     double inertia[3];
     double c_d[3];    
     
@@ -233,7 +233,7 @@ void print6DOF(Quad quad)
     printf("Euler:\t\t");
     for(i = 0 ; i < 3 ; i++)
 
-    printf("%4.6f\t", 180.0*quad.state.euler[i]/M_PI);
+    printf("%4.6f\t", quad.state.euler[i]*180.0/M_PI -360.0);
     printf("\n");
     printf("Pos_e:\t\t");
     for(i = 0 ; i < 3 ; i++)

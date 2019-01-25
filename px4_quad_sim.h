@@ -4,10 +4,10 @@
 #include "quad_model.h"
 
 // Constants.
-#define HIL 1
+#define HIL 0
 
-#define SENSOR_FREQ 400
-#define GPS_FREQ 50
+#define SENSOR_FREQ 250
+#define GPS_FREQ 100
 
 // Global variables.
 Quad quad;

@@ -20,7 +20,7 @@
 #define DEBUG_SIM ENABLED
 // #define DEBUG_SIM DISABLED
 
-#define DEFAULT_HIL_COM_PORT "/dev/ttyS4"
+#define DEFAULT_HIL_COM_PORT "/dev/ttyS1"
 #define DEFAULT_HIL_BAUD B921600
 
 #define DEFAULT_HIL_GCS_SERVER "127.0.0.1"

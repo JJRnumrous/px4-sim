@@ -49,11 +49,11 @@ int advance_sim(uint64_t time_usec, double dt, double wind_vel_e[3])
         return result;
 
     // Gaurd against large dt's
-    // if(dt >= 2 * (double)(1.0 / SENSOR_FREQ))
-    // {
-    //     dt = 2.0 * (double)(1.0 / SENSOR_FREQ);
-    //     printf("changed dt: %2.3f ms\n", dt);
-    // }
+    if(dt >= 1.5 * (double)(1.0 / SENSOR_FREQ))
+    {
+        dt = 1.5 * (double)(1.0 / SENSOR_FREQ);
+        printf("changed dt: %2.3f ms\n", dt);
+    }
 
     get_thrust_commands_force(thrust_commands);
     update_quad(&quad, thrust_commands, wind_vel_e, dt);
@@ -105,6 +105,7 @@ int main()
 
             // Calculate next time the physics sim should update
             sensor_update = cur_time + (uint64_t)(1000000.0 / SENSOR_FREQ);
+            //print6DOF(quad);
         }
         
         // Poll for MAVLink messages: receive actuator controls from PX4 and when in HIL - send messages from autopilo to GCS and vice-versa.
@@ -209,32 +210,32 @@ void test6DOF()
 void print6DOF(Quad quad)
 {
     int i = 0;
-    printf("\nVel_body:\t");
+    printf("\nVel_body:\n");
     for(i = 0 ; i < 3 ; i++)
         printf("%4.6f\t", quad.state.vel_b[i]);
     printf("\n");
 
-    printf("Omega_body:\t");
+    printf("Omega_body:\n");
     for(i = 0 ; i < 3 ; i++)
         printf("%4.6f\t", quad.state.omega_b[i]);
     printf("\n");
     
-    printf("Acc_body:\t");
+    printf("Acc_body:\n");
     for(i = 0 ; i < 3 ; i++)
         printf("%4.6f\t", quad.state.acc_b[i]);
     printf("\n");
 
-    printf("Quat_rates:\t");
+    printf("Quat_rates:\n");
     for(i = 0 ; i < 4 ; i++)
         printf("%4.6f\t", quad.state.quat_rate[i]);
     printf("\n");
 
-    printf("Euler:\t\t");
+    printf("Euler:\n");
     for(i = 0 ; i < 3 ; i++)
 
     printf("%4.6f\t", quad.state.euler[i]*180.0/M_PI -360.0);
     printf("\n");
-    printf("Pos_e:\t\t");
+    printf("Pos_e:\n");
     for(i = 0 ; i < 3 ; i++)
         printf("%4.6f\t", quad.state.pos_e[i]);
     printf("\n");
